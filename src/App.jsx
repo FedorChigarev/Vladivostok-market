@@ -1,6 +1,13 @@
 import { useEffect, useState } from 'react';
 import ListingCard from './ListingCard';
 import { supabase } from './supabase';
+import {
+  getMaxUser,
+  getMaxStartParam,
+  getMaxPlatform,
+  getMaxVersion,
+  getMaxInitData,
+} from './max';
 
 function App() {
   const [filter, setFilter] = useState('Все');
@@ -25,10 +32,20 @@ function App() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
 
+  const [maxUser, setMaxUser] = useState(null);
+  const [maxStartParam, setMaxStartParam] = useState(null);
+  const [maxPlatform, setMaxPlatform] = useState(null);
+  const [maxVersion, setMaxVersion] = useState(null);
+
+  const API_URL = 'https://vladivostok-market-server.onrender.com';
+
   const loadListings = () => {
-    fetch('http://127.0.0.1:3001/listings')
+    fetch(`${API_URL}/listings`)
       .then((res) => res.json())
-      .then((data) => setListings(data));
+      .then((data) => setListings(data))
+      .catch((err) => {
+        console.error('Ошибка загрузки объявлений:', err);
+      });
   };
 
   useEffect(() => {
@@ -51,10 +68,31 @@ function App() {
     };
   }, []);
 
+  useEffect(() => {
+    const userFromMax = getMaxUser();
+    const startParam = getMaxStartParam();
+    const platform = getMaxPlatform();
+    const version = getMaxVersion();
+
+    setMaxUser(userFromMax);
+    setMaxStartParam(startParam);
+    setMaxPlatform(platform);
+    setMaxVersion(version);
+
+    console.log('MAX initData:', getMaxInitData());
+    console.log('MAX user:', userFromMax);
+    console.log('MAX start_param:', startParam);
+    console.log('MAX platform:', platform);
+    console.log('MAX version:', version);
+  }, []);
+
   const openListing = (id) => {
-    fetch(`http://127.0.0.1:3001/listings/${id}`)
+    fetch(`${API_URL}/listings/${id}`)
       .then((res) => res.json())
-      .then((data) => setSelectedListing(data));
+      .then((data) => setSelectedListing(data))
+      .catch((err) => {
+        console.error('Ошибка загрузки карточки:', err);
+      });
   };
 
   const closeListing = () => {
@@ -107,7 +145,10 @@ function App() {
       return;
     }
 
-    if (!title || !price) return;
+    if (!title || !price) {
+      alert('Заполни хотя бы название и цену');
+      return;
+    }
 
     const formData = new FormData();
     formData.append('title', title);
@@ -120,12 +161,17 @@ function App() {
       formData.append('image', imageFile);
     }
 
-    fetch('http://127.0.0.1:3001/listings', {
+    fetch(`${API_URL}/listings`, {
       method: 'POST',
       body: formData,
     })
       .then((res) => res.json())
-      .then(() => {
+      .then((data) => {
+        if (data.error) {
+          alert(data.error);
+          return;
+        }
+
         setTitle('');
         setDescription('');
         setPrice('');
@@ -133,29 +179,36 @@ function App() {
         setContacts('');
         setImageFile(null);
         loadListings();
+      })
+      .catch((err) => {
+        console.error('Ошибка добавления:', err);
       });
   };
 
   const deleteListing = (id) => {
-    fetch(`http://127.0.0.1:3001/listings/${id}`, {
+    fetch(`${API_URL}/listings/${id}`, {
       method: 'DELETE',
       headers: {
         'x-moderator-password': moderatorPassword,
       },
-    }).then(async (res) => {
-      const data = await res.json();
+    })
+      .then(async (res) => {
+        const data = await res.json();
 
-      if (!res.ok) {
-        alert(data.error || 'Ошибка удаления');
-        return;
-      }
+        if (!res.ok) {
+          alert(data.error || 'Ошибка удаления');
+          return;
+        }
 
-      if (selectedListing && selectedListing.id === id) {
-        setSelectedListing(null);
-      }
+        if (selectedListing && selectedListing.id === id) {
+          setSelectedListing(null);
+        }
 
-      loadListings();
-    });
+        loadListings();
+      })
+      .catch((err) => {
+        console.error('Ошибка удаления:', err);
+      });
   };
 
   const loginAsModerator = () => {
@@ -293,6 +346,22 @@ function App() {
             </button>
           )}
         </div>
+      </div>
+
+      <div className="max-info">
+        {maxUser ? (
+          <>
+            <p><strong>Открыто в MAX</strong></p>
+            <p>Пользователь: {maxUser.first_name} {maxUser.last_name}</p>
+            <p>Username: {maxUser.username}</p>
+            <p>MAX user id: {maxUser.id}</p>
+            <p>Платформа: {maxPlatform}</p>
+            <p>Версия MAX: {maxVersion}</p>
+            {maxStartParam && <p>start_param: {maxStartParam}</p>}
+          </>
+        ) : (
+          <p>Сейчас приложение открыто не из MAX или MAX Bridge ещё не передал данные.</p>
+        )}
       </div>
 
       {showAuthBox && (
