@@ -34,57 +34,50 @@ function App() {
 
   const API_URL = import.meta.env.VITE_API_URL;
 
-  const loadListings = () => {
-    fetch(`${API_URL}/listings`)
-      .then((res) => res.json())
-      .then((data) => setListings(Array.isArray(data) ? data : []))
-      .catch((err) => {
-        console.error('Ошибка загрузки объявлений:', err);
-      });
+  const loadListings = async () => {
+    try {
+      const res = await fetch(`${API_URL}/listings`);
+      const data = await res.json();
+      setListings(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error('Ошибка загрузки объявлений:', err);
+    }
   };
 
-  const loadPendingListings = async () => {
-  if (!isModerator) {
-    setPendingListings([]);
-    return;
-  }
+  const loadPendingListings = async (passwordArg) => {
+    const passwordToUse = passwordArg || moderatorPassword;
 
-  try {
-    const res = await fetch(`${API_URL}/moderation/pending`, {
-      headers: {
-        'x-moderator-password': moderatorPassword,
-      },
-    });
-
-    const data = await res.json();
-
-    console.log('PENDING status:', res.status);
-    console.log('PENDING response:', data);
-
-    if (!res.ok) {
-      alert(data.error || 'Ошибка загрузки заявок модератору');
-      setPendingListings([]);
+    if (!passwordToUse) {
+      console.log('Нет пароля модератора');
       return;
     }
 
-    setPendingListings(Array.isArray(data) ? data : []);
-  } catch (err) {
-    console.error('Ошибка загрузки заявок:', err);
-    alert('Сетевая ошибка при загрузке заявок');
-    setPendingListings([]);
-  }
-};
-
-    fetch(`${API_URL}/moderation/pending`, {
-      headers: {
-        'x-moderator-password': moderatorPassword,
-      },
-    })
-      .then((res) => res.json())
-      .then((data) => setPendingListings(Array.isArray(data) ? data : []))
-      .catch((err) => {
-        console.error('Ошибка загрузки заявок:', err);
+    try {
+      const res = await fetch(`${API_URL}/moderation/pending`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-moderator-password': passwordToUse,
+        },
       });
+
+      const data = await res.json();
+
+      console.log('PENDING STATUS:', res.status);
+      console.log('PENDING DATA:', data);
+
+      if (!res.ok) {
+        alert(data.error || 'Ошибка доступа модератора');
+        setPendingListings([]);
+        return;
+      }
+
+      setPendingListings(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error('Ошибка загрузки заявок:', err);
+      alert('Ошибка загрузки заявок');
+      setPendingListings([]);
+    }
   };
 
   useEffect(() => {
@@ -92,12 +85,6 @@ function App() {
       loadListings();
     }
   }, [API_URL]);
-
-  useEffect(() => {
-  if (API_URL && isModerator && moderatorPassword) {
-    loadPendingListings();
-  }
-}, [API_URL, isModerator, moderatorPassword]);
 
   useEffect(() => {
     const userFromMax = getMaxUser();
@@ -125,26 +112,33 @@ function App() {
     console.log('MAX version:', version);
   }, []);
 
-  const openListing = (id) => {
-    fetch(`${API_URL}/listings/${id}`)
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.error) {
-          alert(data.error);
-          return;
-        }
-        setSelectedListing(data);
-      })
-      .catch((err) => {
-        console.error('Ошибка загрузки карточки:', err);
-      });
+  const openListing = async (id) => {
+    try {
+      const headers = {};
+
+      if (isModerator && moderatorPassword) {
+        headers['x-moderator-password'] = moderatorPassword;
+      }
+
+      const res = await fetch(`${API_URL}/listings/${id}`, { headers });
+      const data = await res.json();
+
+      if (!res.ok) {
+        alert(data.error || 'Ошибка загрузки карточки');
+        return;
+      }
+
+      setSelectedListing(data);
+    } catch (err) {
+      console.error('Ошибка загрузки карточки:', err);
+    }
   };
 
   const closeListing = () => {
     setSelectedListing(null);
   };
 
-  const sendToModerator = () => {
+  const sendToModerator = async () => {
     if (!user) {
       alert('Объявление можно подать только из MAX');
       return;
@@ -155,119 +149,151 @@ function App() {
       return;
     }
 
-    const formData = new FormData();
-    formData.append('title', title);
-    formData.append('description', description);
-    formData.append('price', price);
-    formData.append('category', category);
-    formData.append('contacts', contacts);
-    formData.append('max_user_id', user.id);
-    formData.append('max_user_name', user.name || 'Пользователь MAX');
+    try {
+      const formData = new FormData();
+      formData.append('title', title);
+      formData.append('description', description);
+      formData.append('price', price);
+      formData.append('category', category);
+      formData.append('contacts', contacts);
+      formData.append('max_user_id', user.id);
+      formData.append('max_user_name', user.name || 'Пользователь MAX');
 
-    if (imageFile) {
-      formData.append('image', imageFile);
-    }
+      if (imageFile) {
+        formData.append('image', imageFile);
+      }
 
-    fetch(`${API_URL}/listings`, {
-      method: 'POST',
-      body: formData,
-    })
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.error) {
-          alert(data.error);
-          return;
-        }
-
-        alert('Объявление направлено модератору');
-
-        setTitle('');
-        setDescription('');
-        setPrice('');
-        setCategory('Электроника');
-        setContacts('');
-        setImageFile(null);
-
-        loadListings();
-        loadPendingListings();
-      })
-      .catch((err) => {
-        console.error('Ошибка отправки:', err);
+      const res = await fetch(`${API_URL}/listings`, {
+        method: 'POST',
+        body: formData,
       });
+
+      const data = await res.json();
+
+      console.log('POST /listings STATUS:', res.status);
+      console.log('POST /listings DATA:', data);
+
+      if (!res.ok) {
+        alert(data.error || 'Ошибка отправки объявления');
+        return;
+      }
+
+      alert(data.message || 'Объявление направлено модератору');
+
+      setTitle('');
+      setDescription('');
+      setPrice('');
+      setCategory('Электроника');
+      setContacts('');
+      setImageFile(null);
+
+      loadListings();
+
+      if (isModerator) {
+        loadPendingListings();
+      }
+    } catch (err) {
+      console.error('Ошибка отправки:', err);
+      alert('Сетевая ошибка при отправке');
+    }
   };
 
-  const approveListing = (id) => {
-    fetch(`${API_URL}/moderation/approve/${id}`, {
-      method: 'PATCH',
-      headers: {
-        'x-moderator-password': moderatorPassword,
-      },
-    })
-      .then(async (res) => {
-        const data = await res.json();
-
-        if (!res.ok) {
-          alert(data.error || 'Ошибка публикации');
-          return;
-        }
-
-        alert('Объявление опубликовано');
-        loadListings();
-        loadPendingListings();
-      })
-      .catch((err) => {
-        console.error('Ошибка публикации:', err);
+  const approveListing = async (id) => {
+    try {
+      const res = await fetch(`${API_URL}/moderation/approve/${id}`, {
+        method: 'PATCH',
+        headers: {
+          'x-moderator-password': moderatorPassword,
+        },
       });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        alert(data.error || 'Ошибка публикации');
+        return;
+      }
+
+      alert('Объявление опубликовано');
+      loadListings();
+      loadPendingListings();
+    } catch (err) {
+      console.error('Ошибка публикации:', err);
+      alert('Ошибка публикации');
+    }
   };
 
-  const deleteListing = (id) => {
-    const headers = {
-      'x-max-user-id': user?.id || '',
-    };
+  const deleteListing = async (id) => {
+    try {
+      const headers = {
+        'x-max-user-id': user?.id || '',
+      };
 
-    if (isModerator) {
-      headers['x-moderator-password'] = moderatorPassword;
-    }
+      if (isModerator) {
+        headers['x-moderator-password'] = moderatorPassword;
+      }
 
-    fetch(`${API_URL}/listings/${id}`, {
-      method: 'DELETE',
-      headers,
-    })
-      .then(async (res) => {
-        const data = await res.json();
-
-        if (!res.ok) {
-          alert(data.error || 'Ошибка удаления');
-          return;
-        }
-
-        if (selectedListing && selectedListing.id === id) {
-          setSelectedListing(null);
-        }
-
-        loadListings();
-        loadPendingListings();
-      })
-      .catch((err) => {
-        console.error('Ошибка удаления:', err);
+      const res = await fetch(`${API_URL}/listings/${id}`, {
+        method: 'DELETE',
+        headers,
       });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        alert(data.error || 'Ошибка удаления');
+        return;
+      }
+
+      if (selectedListing && selectedListing.id === id) {
+        setSelectedListing(null);
+      }
+
+      loadListings();
+
+      if (isModerator) {
+        loadPendingListings();
+      }
+    } catch (err) {
+      console.error('Ошибка удаления:', err);
+      alert('Ошибка удаления');
+    }
   };
 
   const loginAsModerator = async () => {
-  if (!moderatorPassword) {
-    alert('Введите пароль');
-    return;
-  }
+    if (!moderatorPassword) {
+      alert('Введите пароль');
+      return;
+    }
 
-  setIsModerator(true);
-  setShowModeratorLogin(false);
+    try {
+      const res = await fetch(`${API_URL}/moderation/pending`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-moderator-password': moderatorPassword,
+        },
+      });
 
-  setTimeout(async () => {
-    await loadPendingListings();
-  }, 300);
+      const data = await res.json();
 
-  alert('Режим модератора включён');
-};
+      console.log('LOGIN MODERATOR STATUS:', res.status);
+      console.log('LOGIN MODERATOR DATA:', data);
+
+      if (!res.ok) {
+        alert(data.error || 'Неверный пароль модератора');
+        return;
+      }
+
+      setIsModerator(true);
+      setShowModeratorLogin(false);
+      setPendingListings(Array.isArray(data) ? data : []);
+      alert('Вы вошли как модератор');
+    } catch (err) {
+      console.error('Ошибка входа модератора:', err);
+      alert('Ошибка входа модератора');
+    }
+  };
 
   const logoutModerator = () => {
     setIsModerator(false);
@@ -339,6 +365,10 @@ function App() {
 
           <h3>Автор</h3>
           <p>{selectedListing.max_user_name || 'Неизвестно'}</p>
+
+          {!selectedListing.is_approved && (
+            <p className="pending-status">Объявление на модерации</p>
+          )}
 
           <div className="details-actions">
             {isModerator && !selectedListing.is_approved && (
