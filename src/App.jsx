@@ -43,11 +43,37 @@ function App() {
       });
   };
 
-  const loadPendingListings = () => {
-    if (!isModerator) {
+  const loadPendingListings = async () => {
+  if (!isModerator) {
+    setPendingListings([]);
+    return;
+  }
+
+  try {
+    const res = await fetch(`${API_URL}/moderation/pending`, {
+      headers: {
+        'x-moderator-password': moderatorPassword,
+      },
+    });
+
+    const data = await res.json();
+
+    console.log('PENDING status:', res.status);
+    console.log('PENDING response:', data);
+
+    if (!res.ok) {
+      alert(data.error || 'Ошибка загрузки заявок модератору');
       setPendingListings([]);
       return;
     }
+
+    setPendingListings(Array.isArray(data) ? data : []);
+  } catch (err) {
+    console.error('Ошибка загрузки заявок:', err);
+    alert('Сетевая ошибка при загрузке заявок');
+    setPendingListings([]);
+  }
+};
 
     fetch(`${API_URL}/moderation/pending`, {
       headers: {
@@ -68,10 +94,10 @@ function App() {
   }, [API_URL]);
 
   useEffect(() => {
-    if (API_URL && isModerator) {
-      loadPendingListings();
-    }
-  }, [API_URL, isModerator]);
+  if (API_URL && isModerator && moderatorPassword) {
+    loadPendingListings();
+  }
+}, [API_URL, isModerator, moderatorPassword]);
 
   useEffect(() => {
     const userFromMax = getMaxUser();
@@ -227,20 +253,21 @@ function App() {
       });
   };
 
-  const loginAsModerator = () => {
-    if (!moderatorPassword) {
-      alert('Введите пароль');
-      return;
-    }
+  const loginAsModerator = async () => {
+  if (!moderatorPassword) {
+    alert('Введите пароль');
+    return;
+  }
 
-    setIsModerator(true);
-    setShowModeratorLogin(false);
-    alert('Режим модератора включён');
+  setIsModerator(true);
+  setShowModeratorLogin(false);
 
-    setTimeout(() => {
-      loadPendingListings();
-    }, 300);
-  };
+  setTimeout(async () => {
+    await loadPendingListings();
+  }, 300);
+
+  alert('Режим модератора включён');
+};
 
   const logoutModerator = () => {
     setIsModerator(false);
