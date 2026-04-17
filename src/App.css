@@ -225,3 +225,29 @@ button {
     flex-direction: column;
   }
 }
+.author {
+  margin-top: 8px;
+  font-size: 14px;
+  color: #666;
+}
+
+.pending-status {
+  margin-top: 8px;
+  font-size: 14px;
+  color: #d97706;
+  font-weight: bold;
+}
+
+.card-actions {
+  margin-top: 10px;
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.details-actions {
+  margin-top: 20px;
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}

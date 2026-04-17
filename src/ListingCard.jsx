@@ -1,12 +1,17 @@
 function ListingCard({
+  id,
   title,
   description,
   price,
   category,
   image_url,
+  authorName,
+  isApproved,
+  isModerator,
+  canDelete,
   onOpen,
   onDelete,
-  isModerator,
+  onApprove,
 }) {
   return (
     <div className="card" onClick={onOpen}>
@@ -20,18 +25,31 @@ function ListingCard({
       <p>{description}</p>
       <strong>{price}</strong>
 
-      {isModerator && (
-        <>
-          <br />
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onDelete();
-            }}
-          >
-            Удалить
-          </button>
-        </>
+      {authorName && <p className="author">Автор: {authorName}</p>}
+
+      {isModerator && !isApproved && (
+        <p className="pending-status">На модерации</p>
+      )}
+
+      {(canDelete || (isModerator && !isApproved)) && (
+        <div
+          className="card-actions"
+          onClick={(e) => {
+            e.stopPropagation();
+          }}
+        >
+          {isModerator && !isApproved && (
+            <button onClick={() => onApprove(id)}>Одобрить</button>
+          )}
+
+          {canDelete && (
+            <button onClick={() => onDelete(id)}>Удалить</button>
+          )}
+
+          {isModerator && !canDelete && (
+            <button onClick={() => onDelete(id)}>Удалить</button>
+          )}
+        </div>
       )}
     </div>
   );

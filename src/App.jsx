@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
 import ListingCard from './ListingCard';
-import { supabase } from './supabase';
 import {
   getMaxUser,
   getMaxStartParam,
@@ -27,46 +26,35 @@ function App() {
   const [moderatorPassword, setModeratorPassword] = useState('');
 
   const [user, setUser] = useState(null);
-  const [showAuthBox, setShowAuthBox] = useState(false);
-  const [authMode, setAuthMode] = useState('login');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-
   const [maxUser, setMaxUser] = useState(null);
   const [maxStartParam, setMaxStartParam] = useState(null);
   const [maxPlatform, setMaxPlatform] = useState(null);
   const [maxVersion, setMaxVersion] = useState(null);
 
-  const API_URL = 'https://vladivostok-market-server.onrender.com';
+  const API_URL = import.meta.env.VITE_API_URL;
 
   const loadListings = () => {
-    fetch(`${API_URL}/listings`)
+    const url = isModerator
+      ? `${API_URL}/moderation/listings`
+      : `${API_URL}/listings`;
+
+    const headers = isModerator
+      ? { 'x-moderator-password': moderatorPassword }
+      : {};
+
+    fetch(url, { headers })
       .then((res) => res.json())
-      .then((data) => setListings(data))
+      .then((data) => setListings(Array.isArray(data) ? data : []))
       .catch((err) => {
         console.error('Ошибка загрузки объявлений:', err);
       });
   };
 
   useEffect(() => {
-    loadListings();
-  }, []);
-
-  useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => {
-      setUser(data.user || null);
-    });
-
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user || null);
-    });
-
-    return () => {
-      subscription.unsubscribe();
-    };
-  }, []);
+    if (API_URL) {
+      loadListings();
+    }
+  }, [API_URL, isModerator]);
 
   useEffect(() => {
     const userFromMax = getMaxUser();
@@ -79,6 +67,14 @@ function App() {
     setMaxPlatform(platform);
     setMaxVersion(version);
 
+    if (userFromMax) {
+      setUser({
+        id: userFromMax.id,
+        name: `${userFromMax.first_name || ''} ${userFromMax.last_name || ''}`.trim(),
+        username: userFromMax.username || '',
+      });
+    }
+
     console.log('MAX initData:', getMaxInitData());
     console.log('MAX user:', userFromMax);
     console.log('MAX start_param:', startParam);
@@ -87,9 +83,19 @@ function App() {
   }, []);
 
   const openListing = (id) => {
-    fetch(`${API_URL}/listings/${id}`)
+    const headers = isModerator
+      ? { 'x-moderator-password': moderatorPassword }
+      : {};
+
+    fetch(`${API_URL}/listings/${id}`, { headers })
       .then((res) => res.json())
-      .then((data) => setSelectedListing(data))
+      .then((data) => {
+        if (data.error) {
+          alert(data.error);
+          return;
+        }
+        setSelectedListing(data);
+      })
       .catch((err) => {
         console.error('Ошибка загрузки карточки:', err);
       });
@@ -99,49 +105,9 @@ function App() {
     setSelectedListing(null);
   };
 
-  const signUp = async () => {
-    const { error } = await supabase.auth.signUp({
-      email,
-      password,
-    });
-
-    if (error) {
-      alert(error.message);
-      return;
-    }
-
-    alert('Регистрация прошла. Если включено подтверждение email, проверь почту.');
-    setEmail('');
-    setPassword('');
-    setShowAuthBox(false);
-  };
-
-  const signIn = async () => {
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
-
-    if (error) {
-      alert(error.message);
-      return;
-    }
-
-    alert('Вы вошли');
-    setEmail('');
-    setPassword('');
-    setShowAuthBox(false);
-  };
-
-  const signOut = async () => {
-    await supabase.auth.signOut();
-    setUser(null);
-    alert('Вы вышли');
-  };
-
   const addListing = () => {
     if (!user) {
-      alert('Только зарегистрированный пользователь может публиковать объявление');
+      alert('Объявление можно подать только из MAX');
       return;
     }
 
@@ -156,6 +122,8 @@ function App() {
     formData.append('price', price);
     formData.append('category', category);
     formData.append('contacts', contacts);
+    formData.append('max_user_id', user.id);
+    formData.append('max_user_name', user.name || 'Пользователь MAX');
 
     if (imageFile) {
       formData.append('image', imageFile);
@@ -172,12 +140,15 @@ function App() {
           return;
         }
 
+        alert('Объявление отправлено на модерацию');
+
         setTitle('');
         setDescription('');
         setPrice('');
         setCategory('Электроника');
         setContacts('');
         setImageFile(null);
+
         loadListings();
       })
       .catch((err) => {
@@ -186,11 +157,17 @@ function App() {
   };
 
   const deleteListing = (id) => {
+    const headers = {
+      'x-max-user-id': user?.id || '',
+    };
+
+    if (isModerator) {
+      headers['x-moderator-password'] = moderatorPassword;
+    }
+
     fetch(`${API_URL}/listings/${id}`, {
       method: 'DELETE',
-      headers: {
-        'x-moderator-password': moderatorPassword,
-      },
+      headers,
     })
       .then(async (res) => {
         const data = await res.json();
@@ -211,6 +188,28 @@ function App() {
       });
   };
 
+  const approveListing = (id) => {
+    fetch(`${API_URL}/listings/${id}/approve`, {
+      method: 'PATCH',
+      headers: {
+        'x-moderator-password': moderatorPassword,
+      },
+    })
+      .then(async (res) => {
+        const data = await res.json();
+
+        if (!res.ok) {
+          alert(data.error || 'Ошибка одобрения');
+          return;
+        }
+
+        loadListings();
+      })
+      .catch((err) => {
+        console.error('Ошибка одобрения:', err);
+      });
+  };
+
   const loginAsModerator = () => {
     if (!moderatorPassword) {
       alert('Введите пароль');
@@ -225,7 +224,15 @@ function App() {
   const logoutModerator = () => {
     setIsModerator(false);
     setModeratorPassword('');
+    setSelectedListing(null);
     alert('Режим модератора выключен');
+  };
+
+  const canDeleteItem = (item) => {
+    if (!user) return false;
+    if (isModerator) return true;
+
+    return Number(item.max_user_id) === Number(user.id);
   };
 
   if (selectedListing) {
@@ -235,12 +242,6 @@ function App() {
           <button onClick={closeListing}>← Назад</button>
 
           <div className="topbar-actions">
-            {!user ? (
-              <button onClick={() => setShowAuthBox(true)}>Войти / Регистрация</button>
-            ) : (
-              <button onClick={signOut}>Выйти ({user.email})</button>
-            )}
-
             {!isModerator ? (
               <button onClick={() => setShowModeratorLogin(true)}>
                 Войти как модератор
@@ -252,33 +253,6 @@ function App() {
             )}
           </div>
         </div>
-
-        {showAuthBox && (
-          <div className="moderator-box">
-            <input
-              type="email"
-              placeholder="Email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-            />
-            <input
-              type="password"
-              placeholder="Пароль"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-            />
-            <button onClick={authMode === 'login' ? signIn : signUp}>
-              {authMode === 'login' ? 'Войти' : 'Зарегистрироваться'}
-            </button>
-            <button
-              onClick={() =>
-                setAuthMode(authMode === 'login' ? 'signup' : 'login')
-              }
-            >
-              {authMode === 'login' ? 'Нужна регистрация' : 'У меня уже есть аккаунт'}
-            </button>
-          </div>
-        )}
 
         {showModeratorLogin && (
           <div className="moderator-box">
@@ -314,11 +288,27 @@ function App() {
           <h3>Контакты</h3>
           <p>{selectedListing.contacts || 'Контакты не указаны'}</p>
 
-          {isModerator && (
-            <button onClick={() => deleteListing(selectedListing.id)}>
-              Удалить объявление
-            </button>
+          <h3>Автор</h3>
+          <p>{selectedListing.max_user_name || 'Неизвестно'}</p>
+
+          {!selectedListing.is_approved && (
+            <p className="pending-status">Объявление на модерации</p>
           )}
+
+          <div className="details-actions">
+            {isModerator && !selectedListing.is_approved && (
+              <button onClick={() => approveListing(selectedListing.id)}>
+                Одобрить
+              </button>
+            )}
+
+            {(isModerator ||
+              Number(selectedListing.max_user_id) === Number(user?.id)) && (
+              <button onClick={() => deleteListing(selectedListing.id)}>
+                Удалить объявление
+              </button>
+            )}
+          </div>
         </div>
       </div>
     );
@@ -330,12 +320,6 @@ function App() {
         <h1>Моя барахолка</h1>
 
         <div className="topbar-actions">
-          {!user ? (
-            <button onClick={() => setShowAuthBox(true)}>Войти / Регистрация</button>
-          ) : (
-            <button onClick={signOut}>Выйти ({user.email})</button>
-          )}
-
           {!isModerator ? (
             <button onClick={() => setShowModeratorLogin(true)}>
               Войти как модератор
@@ -352,44 +336,17 @@ function App() {
         {maxUser ? (
           <>
             <p><strong>Открыто в MAX</strong></p>
-            <p>Пользователь: {maxUser.first_name} {maxUser.last_name}</p>
-            <p>Username: {maxUser.username}</p>
-            <p>MAX user id: {maxUser.id}</p>
+            <p>Пользователь: {user?.name}</p>
+            <p>Username: {user?.username || 'нет'}</p>
+            <p>MAX user id: {user?.id}</p>
             <p>Платформа: {maxPlatform}</p>
             <p>Версия MAX: {maxVersion}</p>
             {maxStartParam && <p>start_param: {maxStartParam}</p>}
           </>
         ) : (
-          <p>Сейчас приложение открыто не из MAX или MAX Bridge ещё не передал данные.</p>
+          <p>Открытие только через MAX</p>
         )}
       </div>
-
-      {showAuthBox && (
-        <div className="moderator-box">
-          <input
-            type="email"
-            placeholder="Email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-          />
-          <input
-            type="password"
-            placeholder="Пароль"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-          />
-          <button onClick={authMode === 'login' ? signIn : signUp}>
-            {authMode === 'login' ? 'Войти' : 'Зарегистрироваться'}
-          </button>
-          <button
-            onClick={() =>
-              setAuthMode(authMode === 'login' ? 'signup' : 'login')
-            }
-          >
-            {authMode === 'login' ? 'Нужна регистрация' : 'У меня уже есть аккаунт'}
-          </button>
-        </div>
-      )}
 
       {showModeratorLogin && (
         <div className="moderator-box">
@@ -468,12 +425,16 @@ function App() {
         </div>
       ) : (
         <div className="auth-warning">
-          Чтобы подать объявление, нужно зарегистрироваться и войти.
+          Подать объявление можно только из MAX.
         </div>
       )}
 
       <div className="list">
         {listings
+          .filter((item) => {
+            if (isModerator) return true;
+            return item.is_approved === true;
+          })
           .filter((item) => filter === 'Все' || item.category === filter)
           .filter((item) =>
             item.title.toLowerCase().includes(search.toLowerCase())
@@ -481,14 +442,19 @@ function App() {
           .map((item) => (
             <ListingCard
               key={item.id}
+              id={item.id}
               title={item.title}
               description={item.description}
               price={item.price}
               category={item.category}
               image_url={item.image_url}
-              onOpen={() => openListing(item.id)}
-              onDelete={() => deleteListing(item.id)}
+              authorName={item.max_user_name}
+              isApproved={item.is_approved}
               isModerator={isModerator}
+              canDelete={canDeleteItem(item)}
+              onOpen={() => openListing(item.id)}
+              onDelete={deleteListing}
+              onApprove={approveListing}
             />
           ))}
       </div>
