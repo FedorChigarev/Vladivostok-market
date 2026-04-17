@@ -12,6 +12,7 @@ function App() {
   const [filter, setFilter] = useState('Все');
   const [search, setSearch] = useState('');
   const [listings, setListings] = useState([]);
+  const [pendingListings, setPendingListings] = useState([]);
   const [selectedListing, setSelectedListing] = useState(null);
 
   const [title, setTitle] = useState('');
@@ -34,15 +35,7 @@ function App() {
   const API_URL = import.meta.env.VITE_API_URL;
 
   const loadListings = () => {
-    const url = isModerator
-      ? `${API_URL}/moderation/listings`
-      : `${API_URL}/listings`;
-
-    const headers = isModerator
-      ? { 'x-moderator-password': moderatorPassword }
-      : {};
-
-    fetch(url, { headers })
+    fetch(`${API_URL}/listings`)
       .then((res) => res.json())
       .then((data) => setListings(Array.isArray(data) ? data : []))
       .catch((err) => {
@@ -50,9 +43,33 @@ function App() {
       });
   };
 
+  const loadPendingListings = () => {
+    if (!isModerator) {
+      setPendingListings([]);
+      return;
+    }
+
+    fetch(`${API_URL}/moderation/pending`, {
+      headers: {
+        'x-moderator-password': moderatorPassword,
+      },
+    })
+      .then((res) => res.json())
+      .then((data) => setPendingListings(Array.isArray(data) ? data : []))
+      .catch((err) => {
+        console.error('Ошибка загрузки заявок:', err);
+      });
+  };
+
   useEffect(() => {
     if (API_URL) {
       loadListings();
+    }
+  }, [API_URL]);
+
+  useEffect(() => {
+    if (API_URL && isModerator) {
+      loadPendingListings();
     }
   }, [API_URL, isModerator]);
 
@@ -83,11 +100,7 @@ function App() {
   }, []);
 
   const openListing = (id) => {
-    const headers = isModerator
-      ? { 'x-moderator-password': moderatorPassword }
-      : {};
-
-    fetch(`${API_URL}/listings/${id}`, { headers })
+    fetch(`${API_URL}/listings/${id}`)
       .then((res) => res.json())
       .then((data) => {
         if (data.error) {
@@ -105,7 +118,7 @@ function App() {
     setSelectedListing(null);
   };
 
-  const addListing = () => {
+  const sendToModerator = () => {
     if (!user) {
       alert('Объявление можно подать только из MAX');
       return;
@@ -140,7 +153,7 @@ function App() {
           return;
         }
 
-        alert('Объявление отправлено на модерацию');
+        alert('Объявление направлено модератору');
 
         setTitle('');
         setDescription('');
@@ -150,9 +163,34 @@ function App() {
         setImageFile(null);
 
         loadListings();
+        loadPendingListings();
       })
       .catch((err) => {
-        console.error('Ошибка добавления:', err);
+        console.error('Ошибка отправки:', err);
+      });
+  };
+
+  const approveListing = (id) => {
+    fetch(`${API_URL}/moderation/approve/${id}`, {
+      method: 'PATCH',
+      headers: {
+        'x-moderator-password': moderatorPassword,
+      },
+    })
+      .then(async (res) => {
+        const data = await res.json();
+
+        if (!res.ok) {
+          alert(data.error || 'Ошибка публикации');
+          return;
+        }
+
+        alert('Объявление опубликовано');
+        loadListings();
+        loadPendingListings();
+      })
+      .catch((err) => {
+        console.error('Ошибка публикации:', err);
       });
   };
 
@@ -182,31 +220,10 @@ function App() {
         }
 
         loadListings();
+        loadPendingListings();
       })
       .catch((err) => {
         console.error('Ошибка удаления:', err);
-      });
-  };
-
-  const approveListing = (id) => {
-    fetch(`${API_URL}/listings/${id}/approve`, {
-      method: 'PATCH',
-      headers: {
-        'x-moderator-password': moderatorPassword,
-      },
-    })
-      .then(async (res) => {
-        const data = await res.json();
-
-        if (!res.ok) {
-          alert(data.error || 'Ошибка одобрения');
-          return;
-        }
-
-        loadListings();
-      })
-      .catch((err) => {
-        console.error('Ошибка одобрения:', err);
       });
   };
 
@@ -219,11 +236,16 @@ function App() {
     setIsModerator(true);
     setShowModeratorLogin(false);
     alert('Режим модератора включён');
+
+    setTimeout(() => {
+      loadPendingListings();
+    }, 300);
   };
 
   const logoutModerator = () => {
     setIsModerator(false);
     setModeratorPassword('');
+    setPendingListings([]);
     setSelectedListing(null);
     alert('Режим модератора выключен');
   };
@@ -291,14 +313,10 @@ function App() {
           <h3>Автор</h3>
           <p>{selectedListing.max_user_name || 'Неизвестно'}</p>
 
-          {!selectedListing.is_approved && (
-            <p className="pending-status">Объявление на модерации</p>
-          )}
-
           <div className="details-actions">
             {isModerator && !selectedListing.is_approved && (
               <button onClick={() => approveListing(selectedListing.id)}>
-                Одобрить
+                Опубликовать
               </button>
             )}
 
@@ -357,6 +375,36 @@ function App() {
             onChange={(e) => setModeratorPassword(e.target.value)}
           />
           <button onClick={loginAsModerator}>Войти</button>
+        </div>
+      )}
+
+      {isModerator && (
+        <div className="moderation-panel">
+          <h2>Заявки на публикацию</h2>
+
+          {pendingListings.length === 0 ? (
+            <p>Новых заявок нет</p>
+          ) : (
+            <div className="list">
+              {pendingListings.map((item) => (
+                <ListingCard
+                  key={item.id}
+                  id={item.id}
+                  title={item.title}
+                  description={item.description}
+                  price={item.price}
+                  category={item.category}
+                  image_url={item.image_url}
+                  authorName={item.max_user_name}
+                  canDelete={true}
+                  isModeratorMode={true}
+                  onOpen={() => openListing(item.id)}
+                  onDelete={deleteListing}
+                  onApprove={approveListing}
+                />
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -419,8 +467,8 @@ function App() {
             onChange={(e) => setImageFile(e.target.files[0])}
           />
 
-          <button onClick={addListing}>
-            Добавить объявление
+          <button onClick={sendToModerator}>
+            Направить модератору
           </button>
         </div>
       ) : (
@@ -431,10 +479,6 @@ function App() {
 
       <div className="list">
         {listings
-          .filter((item) => {
-            if (isModerator) return true;
-            return item.is_approved === true;
-          })
           .filter((item) => filter === 'Все' || item.category === filter)
           .filter((item) =>
             item.title.toLowerCase().includes(search.toLowerCase())
@@ -449,9 +493,8 @@ function App() {
               category={item.category}
               image_url={item.image_url}
               authorName={item.max_user_name}
-              isApproved={item.is_approved}
-              isModerator={isModerator}
               canDelete={canDeleteItem(item)}
+              isModeratorMode={false}
               onOpen={() => openListing(item.id)}
               onDelete={deleteListing}
               onApprove={approveListing}

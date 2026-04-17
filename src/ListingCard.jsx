@@ -6,9 +6,8 @@ function ListingCard({
   category,
   image_url,
   authorName,
-  isApproved,
-  isModerator,
   canDelete,
+  isModeratorMode,
   onOpen,
   onDelete,
   onApprove,
@@ -27,26 +26,18 @@ function ListingCard({
 
       {authorName && <p className="author">Автор: {authorName}</p>}
 
-      {isModerator && !isApproved && (
-        <p className="pending-status">На модерации</p>
-      )}
-
-      {(canDelete || (isModerator && !isApproved)) && (
+      {(canDelete || isModeratorMode) && (
         <div
           className="card-actions"
           onClick={(e) => {
             e.stopPropagation();
           }}
         >
-          {isModerator && !isApproved && (
-            <button onClick={() => onApprove(id)}>Одобрить</button>
+          {isModeratorMode && (
+            <button onClick={() => onApprove(id)}>Опубликовать</button>
           )}
 
-          {canDelete && (
-            <button onClick={() => onDelete(id)}>Удалить</button>
-          )}
-
-          {isModerator && !canDelete && (
+          {(canDelete || isModeratorMode) && (
             <button onClick={() => onDelete(id)}>Удалить</button>
           )}
         </div>
