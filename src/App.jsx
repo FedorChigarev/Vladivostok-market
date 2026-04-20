@@ -44,42 +44,6 @@ function App() {
     }
   };
 
-  const loadPendingListings = async (passwordArg) => {
-    const passwordToUse = passwordArg || moderatorPassword;
-
-    if (!passwordToUse) {
-      console.log('Нет пароля модератора');
-      return;
-    }
-
-    try {
-      const res = await fetch(`${API_URL}/moderation/pending`, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-moderator-password': passwordToUse,
-        },
-      });
-
-      const data = await res.json();
-
-      console.log('PENDING STATUS:', res.status);
-      console.log('PENDING DATA:', data);
-
-      if (!res.ok) {
-        alert(data.error || 'Ошибка доступа модератора');
-        setPendingListings([]);
-        return;
-      }
-
-      setPendingListings(Array.isArray(data) ? data : []);
-    } catch (err) {
-      console.error('Ошибка загрузки заявок:', err);
-      alert('Ошибка загрузки заявок');
-      setPendingListings([]);
-    }
-  };
-
   useEffect(() => {
     if (API_URL) {
       loadListings();
@@ -138,6 +102,48 @@ function App() {
     setSelectedListing(null);
   };
 
+  const loginAsModerator = async () => {
+    if (!moderatorPassword) {
+      alert('Введите пароль');
+      return;
+    }
+
+    try {
+      const res = await fetch(`${API_URL}/moderation/login`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          password: moderatorPassword,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        alert(data.error || 'Неверный пароль модератора');
+        return;
+      }
+
+      setIsModerator(true);
+      setShowModeratorLogin(false);
+      setPendingListings(Array.isArray(data.items) ? data.items : []);
+      alert('Модератор вошёл');
+    } catch (err) {
+      console.error('Ошибка входа модератора:', err);
+      alert('Ошибка входа модератора');
+    }
+  };
+
+  const logoutModerator = () => {
+    setIsModerator(false);
+    setModeratorPassword('');
+    setPendingListings([]);
+    setSelectedListing(null);
+    alert('Режим модератора выключен');
+  };
+
   const sendToModerator = async () => {
     if (!user) {
       alert('Объявление можно подать только из MAX');
@@ -170,9 +176,6 @@ function App() {
 
       const data = await res.json();
 
-      console.log('POST /listings STATUS:', res.status);
-      console.log('POST /listings DATA:', data);
-
       if (!res.ok) {
         alert(data.error || 'Ошибка отправки объявления');
         return;
@@ -188,10 +191,6 @@ function App() {
       setImageFile(null);
 
       loadListings();
-
-      if (isModerator) {
-        loadPendingListings();
-      }
     } catch (err) {
       console.error('Ошибка отправки:', err);
       alert('Сетевая ошибка при отправке');
@@ -215,8 +214,9 @@ function App() {
       }
 
       alert('Объявление опубликовано');
+
+      setPendingListings((prev) => prev.filter((item) => item.id !== id));
       loadListings();
-      loadPendingListings();
     } catch (err) {
       console.error('Ошибка публикации:', err);
       alert('Ошибка публикации');
@@ -249,64 +249,17 @@ function App() {
         setSelectedListing(null);
       }
 
+      setPendingListings((prev) => prev.filter((item) => item.id !== id));
       loadListings();
-
-      if (isModerator) {
-        loadPendingListings();
-      }
     } catch (err) {
       console.error('Ошибка удаления:', err);
       alert('Ошибка удаления');
     }
   };
 
-  const loginAsModerator = async () => {
-    if (!moderatorPassword) {
-      alert('Введите пароль');
-      return;
-    }
-
-    try {
-      const res = await fetch(`${API_URL}/moderation/pending`, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-moderator-password': moderatorPassword,
-        },
-      });
-
-      const data = await res.json();
-
-      console.log('LOGIN MODERATOR STATUS:', res.status);
-      console.log('LOGIN MODERATOR DATA:', data);
-
-      if (!res.ok) {
-        alert(data.error || 'Неверный пароль модератора');
-        return;
-      }
-
-      setIsModerator(true);
-      setShowModeratorLogin(false);
-      setPendingListings(Array.isArray(data) ? data : []);
-      alert('Вы вошли как модератор');
-    } catch (err) {
-      console.error('Ошибка входа модератора:', err);
-      alert('Ошибка входа модератора');
-    }
-  };
-
-  const logoutModerator = () => {
-    setIsModerator(false);
-    setModeratorPassword('');
-    setPendingListings([]);
-    setSelectedListing(null);
-    alert('Режим модератора выключен');
-  };
-
   const canDeleteItem = (item) => {
     if (!user) return false;
     if (isModerator) return true;
-
     return Number(item.max_user_id) === Number(user.id);
   };
 
