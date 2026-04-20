@@ -20,7 +20,6 @@ function App() {
   const [userId, setUserId] = useState(null);
   const [userName, setUserName] = useState(null);
 
-  // ===== MAX USER =====
   useEffect(() => {
     if (window.Telegram?.WebApp) {
       const user = window.Telegram.WebApp.initDataUnsafe?.user;
@@ -34,7 +33,6 @@ function App() {
     }
   }, []);
 
-  // ===== LOAD PUBLIC =====
   const loadListings = () => {
     fetch(`${API}/listings`)
       .then(res => res.json())
@@ -45,25 +43,26 @@ function App() {
     loadListings();
   }, []);
 
-  // ===== LOGIN MODERATOR =====
-  const loginModerator = () => {
-    fetch(`${API}/moderation/pending`, {
+  const loginModerator = async () => {
+    const res = await fetch(`${API}/moderation/pending`, {
       headers: {
-        'x-moderator-password': moderatorPassword
+        'x-moderator-password': moderatorPassword.trim()
       }
-    })
-      .then(res => res.json())
-      .then(data => {
-        if (data.error) {
-          alert('Неверный пароль');
-        } else {
-          setIsModerator(true);
-          setPending(data);
-        }
-      });
+    });
+
+    const data = await res.json();
+
+    console.log('Ответ сервера:', data);
+
+    if (!res.ok || data.error) {
+      alert('Неверный пароль');
+      return;
+    }
+
+    setIsModerator(true);
+    setPending(data);
   };
 
-  // ===== LOAD PENDING =====
   const loadPending = () => {
     fetch(`${API}/moderation/pending`, {
       headers: {
@@ -74,7 +73,6 @@ function App() {
       .then(setPending);
   };
 
-  // ===== APPROVE =====
   const approve = (id) => {
     fetch(`${API}/moderation/approve/${id}`, {
       method: 'PATCH',
@@ -87,7 +85,6 @@ function App() {
     });
   };
 
-  // ===== DELETE =====
   const remove = (id) => {
     fetch(`${API}/listings/${id}`, {
       method: 'DELETE',
@@ -101,7 +98,6 @@ function App() {
     });
   };
 
-  // ===== CREATE =====
   const submit = async () => {
     const formData = new FormData();
 
@@ -126,101 +122,39 @@ function App() {
       alert(data.error);
     } else {
       alert('Отправлено модератору');
-      setTitle('');
-      setDescription('');
-      setPrice('');
-      setContacts('');
-      setImageFile(null);
     }
   };
 
   return (
     <div className={isModerator ? 'app moderator-mode' : 'app'}>
-
       <h1>Моя барахолка</h1>
 
-      <p className="user">👤 {userName}</p>
+      <p>👤 {userName}</p>
 
-      {/* ===== MODERATOR LOGIN ===== */}
       {!isModerator && (
-        <div className="login-box">
+        <div>
           <input
             type="password"
-            placeholder="Пароль модератора"
+            placeholder="Пароль"
             value={moderatorPassword}
             onChange={(e) => setModeratorPassword(e.target.value)}
           />
-          <button onClick={loginModerator}>
-            Войти как модератор
-          </button>
+          <button onClick={loginModerator}>Войти как модератор</button>
         </div>
       )}
 
-      {/* ===== MODERATOR PANEL ===== */}
       {isModerator && (
-        <div className="moderator-panel">
+        <div>
           <h2>🟢 Привет, модератор!</h2>
 
-          <button className="logout" onClick={() => setIsModerator(false)}>
-            Выйти
-          </button>
-
-          <h3>Заявки на модерацию</h3>
-
-          {pending.length === 0 && <p>Нет заявок</p>}
-
           {pending.map(item => (
-            <div key={item.id} className="card">
-              <h4>{item.title}</h4>
-              <p>{item.description}</p>
-              <p>{item.price}</p>
-
-              <div className="actions">
-                <button onClick={() => approve(item.id)}>✔ Одобрить</button>
-                <button onClick={() => remove(item.id)}>❌ Удалить</button>
-              </div>
+            <div key={item.id}>
+              <p>{item.title}</p>
+              <button onClick={() => approve(item.id)}>Одобрить</button>
             </div>
           ))}
         </div>
       )}
-
-      {/* ===== CREATE ===== */}
-      <div className="form">
-        <input placeholder="Название" value={title} onChange={e => setTitle(e.target.value)} />
-        <input placeholder="Описание" value={description} onChange={e => setDescription(e.target.value)} />
-        <input placeholder="Цена" value={price} onChange={e => setPrice(e.target.value)} />
-        <input placeholder="Контакты" value={contacts} onChange={e => setContacts(e.target.value)} />
-
-        <select value={category} onChange={e => setCategory(e.target.value)}>
-          <option>Электроника</option>
-          <option>Мебель</option>
-          <option>Одежда</option>
-          <option>Транспорт</option>
-          <option>Другое</option>
-        </select>
-
-        <input type="file" onChange={e => setImageFile(e.target.files[0])} />
-
-        <button onClick={submit}>
-          Отправить на модерацию
-        </button>
-      </div>
-
-      {/* ===== LIST ===== */}
-      <div className="list">
-        {listings.map(item => (
-          <div key={item.id} className="card">
-            <h4>{item.title}</h4>
-            <p>{item.description}</p>
-            <p>{item.price}</p>
-
-            <button onClick={() => remove(item.id)}>
-              Удалить
-            </button>
-          </div>
-        ))}
-      </div>
-
     </div>
   );
 }
