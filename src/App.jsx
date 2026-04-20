@@ -1,11 +1,14 @@
 import { useEffect, useState } from 'react';
+import './App.css';
 
 function App() {
-  const [listings, setListings] = useState([]);
-  const [pendingListings, setPendingListings] = useState([]);
+  const API = 'https://vladivostok-market-server.onrender.com';
 
-  const [moderatorPassword, setModeratorPassword] = useState('');
+  const [listings, setListings] = useState([]);
+  const [pending, setPending] = useState([]);
+
   const [isModerator, setIsModerator] = useState(false);
+  const [moderatorPassword, setModeratorPassword] = useState('');
 
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -14,28 +17,26 @@ function App() {
   const [category, setCategory] = useState('Другое');
   const [imageFile, setImageFile] = useState(null);
 
-  const [maxUserId, setMaxUserId] = useState(null);
-  const [maxUserName, setMaxUserName] = useState(null);
+  const [userId, setUserId] = useState(null);
+  const [userName, setUserName] = useState(null);
 
-  // ===== MAX данные =====
+  // ===== MAX USER =====
   useEffect(() => {
     if (window.Telegram?.WebApp) {
       const user = window.Telegram.WebApp.initDataUnsafe?.user;
-
       if (user) {
-        setMaxUserId(user.id);
-        setMaxUserName(user.first_name);
+        setUserId(user.id);
+        setUserName(user.first_name);
       }
     } else {
-      // fallback (чтобы тестить в браузере)
-      setMaxUserId(123);
-      setMaxUserName('Test');
+      setUserId(1);
+      setUserName('Тест');
     }
   }, []);
 
-  // ===== загрузка объявлений =====
+  // ===== LOAD PUBLIC =====
   const loadListings = () => {
-    fetch('https://vladivostok-market-server.onrender.com/listings')
+    fetch(`${API}/listings`)
       .then(res => res.json())
       .then(setListings);
   };
@@ -44,8 +45,64 @@ function App() {
     loadListings();
   }, []);
 
-  // ===== отправка объявления =====
-  const submitListing = async () => {
+  // ===== LOGIN MODERATOR =====
+  const loginModerator = () => {
+    fetch(`${API}/moderation/pending`, {
+      headers: {
+        'x-moderator-password': moderatorPassword
+      }
+    })
+      .then(res => res.json())
+      .then(data => {
+        if (data.error) {
+          alert('Неверный пароль');
+        } else {
+          setIsModerator(true);
+          setPending(data);
+        }
+      });
+  };
+
+  // ===== LOAD PENDING =====
+  const loadPending = () => {
+    fetch(`${API}/moderation/pending`, {
+      headers: {
+        'x-moderator-password': moderatorPassword
+      }
+    })
+      .then(res => res.json())
+      .then(setPending);
+  };
+
+  // ===== APPROVE =====
+  const approve = (id) => {
+    fetch(`${API}/moderation/approve/${id}`, {
+      method: 'PATCH',
+      headers: {
+        'x-moderator-password': moderatorPassword
+      }
+    }).then(() => {
+      loadPending();
+      loadListings();
+    });
+  };
+
+  // ===== DELETE =====
+  const remove = (id) => {
+    fetch(`${API}/listings/${id}`, {
+      method: 'DELETE',
+      headers: {
+        'x-max-user-id': userId,
+        'x-moderator-password': moderatorPassword
+      }
+    }).then(() => {
+      loadListings();
+      loadPending();
+    });
+  };
+
+  // ===== CREATE =====
+  const submit = async () => {
     const formData = new FormData();
 
     formData.append('title', title);
@@ -53,14 +110,12 @@ function App() {
     formData.append('price', price);
     formData.append('contacts', contacts);
     formData.append('category', category);
-    formData.append('max_user_id', maxUserId);
-    formData.append('max_user_name', maxUserName);
+    formData.append('max_user_id', userId);
+    formData.append('max_user_name', userName);
 
-    if (imageFile) {
-      formData.append('image', imageFile);
-    }
+    if (imageFile) formData.append('image', imageFile);
 
-    const res = await fetch('https://vladivostok-market-server.onrender.com/listings', {
+    const res = await fetch(`${API}/listings`, {
       method: 'POST',
       body: formData
     });
@@ -79,97 +134,57 @@ function App() {
     }
   };
 
-  // ===== вход модератора =====
-  const loginModerator = () => {
-    fetch('https://vladivostok-market-server.onrender.com/moderation/pending', {
-      headers: {
-        'x-moderator-password': moderatorPassword
-      }
-    })
-      .then(res => res.json())
-      .then(data => {
-        if (data.error) {
-          alert('Неверный пароль');
-        } else {
-          setIsModerator(true);
-          setPendingListings(data);
-        }
-      });
-  };
-
-  const loadPending = () => {
-    fetch('https://vladivostok-market-server.onrender.com/moderation/pending', {
-      headers: {
-        'x-moderator-password': moderatorPassword
-      }
-    })
-      .then(res => res.json())
-      .then(setPendingListings);
-  };
-
-  const approveListing = (id) => {
-    fetch(`https://vladivostok-market-server.onrender.com/moderation/approve/${id}`, {
-      method: 'PATCH',
-      headers: {
-        'x-moderator-password': moderatorPassword
-      }
-    }).then(() => {
-      loadPending();
-      loadListings();
-    });
-  };
-
-  const deleteListing = (id) => {
-    fetch(`https://vladivostok-market-server.onrender.com/listings/${id}`, {
-      method: 'DELETE',
-      headers: {
-        'x-max-user-id': maxUserId
-      }
-    }).then(() => loadListings());
-  };
-
   return (
-    <div className="container">
+    <div className={isModerator ? 'app moderator-mode' : 'app'}>
 
       <h1>Моя барахолка</h1>
 
-      <div className="user">
-        Пользователь: {maxUserName}
-      </div>
+      <p className="user">👤 {userName}</p>
 
-      {/* ===== модератор ===== */}
+      {/* ===== MODERATOR LOGIN ===== */}
       {!isModerator && (
-        <div className="moderator-login">
+        <div className="login-box">
           <input
             type="password"
             placeholder="Пароль модератора"
             value={moderatorPassword}
             onChange={(e) => setModeratorPassword(e.target.value)}
           />
-          <button onClick={loginModerator}>Войти как модератор</button>
+          <button onClick={loginModerator}>
+            Войти как модератор
+          </button>
         </div>
       )}
 
+      {/* ===== MODERATOR PANEL ===== */}
       {isModerator && (
-        <div className="moderation">
-          <h2>Заявки</h2>
+        <div className="moderator-panel">
+          <h2>🟢 Привет, модератор!</h2>
 
-          {pendingListings.length === 0 && <p>Нет заявок</p>}
+          <button className="logout" onClick={() => setIsModerator(false)}>
+            Выйти
+          </button>
 
-          {pendingListings.map(item => (
+          <h3>Заявки на модерацию</h3>
+
+          {pending.length === 0 && <p>Нет заявок</p>}
+
+          {pending.map(item => (
             <div key={item.id} className="card">
-              <h3>{item.title}</h3>
+              <h4>{item.title}</h4>
               <p>{item.description}</p>
               <p>{item.price}</p>
-              <p>{item.contacts}</p>
 
-              <button onClick={() => approveListing(item.id)}>Одобрить</button>
+              <div className="actions">
+                <button onClick={() => approve(item.id)}>✔ Одобрить</button>
+                <button onClick={() => remove(item.id)}>❌ Удалить</button>
+              </div>
             </div>
           ))}
         </div>
       )}
 
-      {/* ===== форма ===== */}
+      {/* ===== CREATE ===== */}
       <div className="form">
         <input placeholder="Название" value={title} onChange={e => setTitle(e.target.value)} />
         <input placeholder="Описание" value={description} onChange={e => setDescription(e.target.value)} />
@@ -179,28 +194,27 @@ function App() {
         <select value={category} onChange={e => setCategory(e.target.value)}>
           <option>Электроника</option>
           <option>Мебель</option>
-          <option>Транспорт</option>
           <option>Одежда</option>
+          <option>Транспорт</option>
           <option>Другое</option>
         </select>
 
         <input type="file" onChange={e => setImageFile(e.target.files[0])} />
 
-        <button onClick={submitListing}>
-          Направить модератору
+        <button onClick={submit}>
+          Отправить на модерацию
         </button>
       </div>
 
-      {/* ===== объявления ===== */}
+      {/* ===== LIST ===== */}
       <div className="list">
         {listings.map(item => (
           <div key={item.id} className="card">
-            <h3>{item.title}</h3>
+            <h4>{item.title}</h4>
             <p>{item.description}</p>
             <p>{item.price}</p>
-            <p>{item.contacts}</p>
 
-            <button onClick={() => deleteListing(item.id)}>
+            <button onClick={() => remove(item.id)}>
               Удалить
             </button>
           </div>
